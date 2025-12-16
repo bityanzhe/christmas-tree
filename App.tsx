@@ -51,6 +51,8 @@ export default function App() {
   const [uploadedPhotos, setUploadedPhotos] = useState<string[]>([]);
   const [isLoadingShare, setIsLoadingShare] = useState(false);
   const [isSharedView, setIsSharedView] = useState(false);
+  const [twoHandsDetected, setTwoHandsDetected] = useState(false);
+  const [closestPhoto, setClosestPhoto] = useState<string | null>(null);
 
   // Check for share parameter in URL on mount
   useEffect(() => {
@@ -103,6 +105,14 @@ export default function App() {
     setHandPosition({ x, y, detected });
   };
 
+  const handleTwoHandsDetected = (detected: boolean) => {
+    setTwoHandsDetected(detected);
+  };
+
+  const handleClosestPhotoChange = (photoUrl: string | null) => {
+    setClosestPhoto(photoUrl);
+  };
+
   const handlePhotosUpload = (photos: string[]) => {
     setUploadedPhotos(photos);
   };
@@ -117,7 +127,7 @@ export default function App() {
           shadows
         >
           <Suspense fallback={null}>
-            <Experience mode={mode} handPosition={handPosition} uploadedPhotos={uploadedPhotos} />
+            <Experience mode={mode} handPosition={handPosition} uploadedPhotos={uploadedPhotos} twoHandsDetected={twoHandsDetected} onClosestPhotoChange={handleClosestPhotoChange} />
           </Suspense>
         </Canvas>
       </ErrorBoundary>
@@ -148,7 +158,36 @@ export default function App() {
       )}
       
       {/* Gesture Control Module */}
-      <GestureController currentMode={mode} onModeChange={setMode} onHandPosition={handleHandPosition} />
+      <GestureController currentMode={mode} onModeChange={setMode} onHandPosition={handleHandPosition} onTwoHandsDetected={handleTwoHandsDetected} />
+      
+      {/* Photo Overlay - Shows when two hands detected */}
+      {closestPhoto && (
+        <div className="fixed inset-0 z-40 flex items-center justify-center pointer-events-none animate-fade-in">
+          {/* Semi-transparent backdrop */}
+          <div className="absolute inset-0 bg-black/60 backdrop-blur-sm"></div>
+          
+          {/* Polaroid frame with photo */}
+          <div className="relative z-50 transform transition-all duration-500 ease-out animate-scale-in">
+            {/* Polaroid container */}
+            <div className="bg-white p-4 pb-8 shadow-2xl" style={{ width: '60vmin', maxWidth: '600px' }}>
+              {/* Gold clip at top */}
+              <div className="absolute top-0 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-12 h-6 bg-gradient-to-b from-[#D4AF37] to-[#C5A028] rounded-sm shadow-lg"></div>
+              
+              {/* Photo */}
+              <img 
+                src={closestPhoto} 
+                alt="Selected Memory" 
+                className="w-full aspect-square object-cover"
+              />
+              
+              {/* Text label */}
+              <div className="text-center mt-4 font-serif text-gray-700 text-lg">
+                Happy Memories
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

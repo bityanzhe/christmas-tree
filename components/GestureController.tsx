@@ -7,9 +7,10 @@ interface GestureControllerProps {
   onModeChange: (mode: TreeMode) => void;
   currentMode: TreeMode;
   onHandPosition?: (x: number, y: number, detected: boolean) => void;
+  onTwoHandsDetected?: (detected: boolean) => void;
 }
 
-export const GestureController: React.FC<GestureControllerProps> = ({ onModeChange, currentMode, onHandPosition }) => {
+export const GestureController: React.FC<GestureControllerProps> = ({ onModeChange, currentMode, onHandPosition, onTwoHandsDetected }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const [isLoaded, setIsLoaded] = useState(false);
@@ -41,7 +42,7 @@ export const GestureController: React.FC<GestureControllerProps> = ({ onModeChan
             delegate: "GPU"
           },
           runningMode: "VIDEO",
-          numHands: 1
+          numHands: 2
         });
 
         startWebcam();
@@ -73,20 +74,8 @@ export const GestureController: React.FC<GestureControllerProps> = ({ onModeChan
       }
     };
 
-    const drawHandSkeleton = (landmarks: any[]) => {
-      if (!canvasRef.current || !videoRef.current) return;
-      
-      const canvas = canvasRef.current;
-      const ctx = canvas.getContext('2d');
-      if (!ctx) return;
-
-      // Set canvas size to match video
-      canvas.width = videoRef.current.videoWidth;
-      canvas.height = videoRef.current.videoHeight;
-
-      // Clear canvas
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
+    // Draw a single hand without clearing canvas
+    const drawSingleHandSkeleton = (landmarks: any[], ctx: CanvasRenderingContext2D, canvas: HTMLCanvasElement) => {
       // Hand connections (MediaPipe hand model)
       const connections = [
         // Thumb
@@ -135,6 +124,27 @@ export const GestureController: React.FC<GestureControllerProps> = ({ onModeChan
       });
     };
 
+    // Draw all detected hands
+    const drawAllHands = (allLandmarks: any[][]) => {
+      if (!canvasRef.current || !videoRef.current) return;
+      
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext('2d');
+      if (!ctx) return;
+
+      // Set canvas size to match video
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+
+      // Clear canvas once
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+      // Draw each hand
+      allLandmarks.forEach(landmarks => {
+        drawSingleHandSkeleton(landmarks, ctx, canvas);
+      });
+    };
+
     const predictWebcam = () => {
       if (!handLandmarker || !videoRef.current) return;
 
@@ -143,14 +153,26 @@ export const GestureController: React.FC<GestureControllerProps> = ({ onModeChan
         const result = handLandmarker.detectForVideo(videoRef.current, startTimeMs);
 
         if (result.landmarks && result.landmarks.length > 0) {
+          // Check if two hands are detected
+          const twoHandsDetected = result.landmarks.length >= 2;
+          if (onTwoHandsDetected) {
+            onTwoHandsDetected(twoHandsDetected);
+          }
+
+          // Draw all detected hands at once
+          drawAllHands(result.landmarks);
+          
+          // Use first hand for gesture detection
           const landmarks = result.landmarks[0];
-          drawHandSkeleton(landmarks);
           detectGesture(landmarks);
         } else {
             setGestureStatus("No hand detected");
             setHandPos(null); // Clear hand position when no hand detected
             if (onHandPosition) {
               onHandPosition(0.5, 0.5, false); // No hand detected
+            }
+            if (onTwoHandsDetected) {
+              onTwoHandsDetected(false);
             }
             // Clear canvas when no hand detected
             if (canvasRef.current) {

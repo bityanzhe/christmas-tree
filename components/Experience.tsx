@@ -14,9 +14,11 @@ interface ExperienceProps {
   mode: TreeMode;
   handPosition: { x: number; y: number; detected: boolean };
   uploadedPhotos: string[];
+  twoHandsDetected: boolean;
+  onClosestPhotoChange?: (photoUrl: string | null) => void;
 }
 
-export const Experience: React.FC<ExperienceProps> = ({ mode, handPosition, uploadedPhotos }) => {
+export const Experience: React.FC<ExperienceProps> = ({ mode, handPosition, uploadedPhotos, twoHandsDetected, onClosestPhotoChange }) => {
   const controlsRef = useRef<any>(null);
 
   // Update camera rotation based on hand position
@@ -100,7 +102,7 @@ export const Experience: React.FC<ExperienceProps> = ({ mode, handPosition, uplo
       <group position={[0, -5, 0]}>
         <Foliage mode={mode} count={12000} />
         <Ornaments mode={mode} count={600} />
-        <Polaroids mode={mode} uploadedPhotos={uploadedPhotos} />
+        <Polaroids mode={mode} uploadedPhotos={uploadedPhotos} twoHandsDetected={twoHandsDetected} onClosestPhotoChange={onClosestPhotoChange} />
         <TreeStar mode={mode} />
         
         {/* Floor Reflections */}
