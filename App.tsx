@@ -45,6 +45,15 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
   }
 }
 
+// 照片列表 - 从 public/photos/ 目录加载
+const PHOTO_LIST = [
+  '/photos/BingWallpaper.jpg',
+  '/photos/channels4_profile.jpg',
+  '/photos/images.jpeg',
+  '/photos/WechatIMG79.jpg',
+  '/photos/截屏2024-05-24 17.26.34.png',
+];
+
 export default function App() {
   const [mode, setMode] = useState<TreeMode>(TreeMode.FORMED);
   const [handPosition, setHandPosition] = useState<{ x: number; y: number; detected: boolean }>({ x: 0.5, y: 0.5, detected: false });
@@ -54,13 +63,14 @@ export default function App() {
   const [twoHandsDetected, setTwoHandsDetected] = useState(false);
   const [closestPhoto, setClosestPhoto] = useState<string | null>(null);
 
-  // Check for share parameter in URL on mount
+  // Check for share parameter in URL on mount, or load local photos
   useEffect(() => {
-    const loadSharedPhotos = async () => {
+    const loadPhotos = async () => {
       const urlParams = new URLSearchParams(window.location.search);
       const shareId = urlParams.get('share');
 
-      if (!shareId) return;
+      // If share ID exists, load shared photos
+      if (shareId) {
 
       setIsSharedView(true);
       setIsLoadingShare(true);
@@ -92,9 +102,14 @@ export default function App() {
       } finally {
         setIsLoadingShare(false);
       }
+        return;
+      }
+
+      // Otherwise, load photos from public/photos/ directory
+      setUploadedPhotos(PHOTO_LIST);
     };
 
-    loadSharedPhotos();
+    loadPhotos();
   }, []);
 
   const toggleMode = () => {
@@ -113,8 +128,9 @@ export default function App() {
     setClosestPhoto(photoUrl);
   };
 
+  // 不再需要上传功能，照片已从 public/photos/ 目录加载
   const handlePhotosUpload = (photos: string[]) => {
-    setUploadedPhotos(photos);
+    // 保留此函数以保持接口兼容，但不再使用
   };
 
   return (

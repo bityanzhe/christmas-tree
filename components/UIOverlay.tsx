@@ -1,4 +1,4 @@
-import React, { useRef, useState } from 'react';
+import React, { useState } from 'react';
 import { TreeMode } from '../types';
 
 interface UIOverlayProps {
@@ -12,45 +12,11 @@ interface UIOverlayProps {
 
 export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUpload, hasPhotos, uploadedPhotos, isSharedView }) => {
   const isFormed = mode === TreeMode.FORMED;
-  const fileInputRef = useRef<HTMLInputElement>(null);
   const [isSharing, setIsSharing] = useState(false);
   const [shareLink, setShareLink] = useState<string>('');
   const [shareError, setShareError] = useState<string>('');
   const [copied, setCopied] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
-
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const photoUrls: string[] = [];
-    const readers: Promise<string>[] = [];
-
-    for (let i = 0; i < files.length; i++) {
-      const file = files[i];
-      if (!file.type.startsWith('image/')) continue;
-
-      const promise = new Promise<string>((resolve) => {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          if (event.target?.result) {
-            resolve(event.target.result as string);
-          }
-        };
-        reader.readAsDataURL(file);
-      });
-
-      readers.push(promise);
-    }
-
-    Promise.all(readers).then((urls) => {
-      onPhotosUpload(urls);
-    });
-  };
-
-  const handleUploadClick = () => {
-    fileInputRef.current?.click();
-  };
 
   // Helper function to convert base64 to Blob
   const base64ToBlob = (base64: string): Blob => {
@@ -64,19 +30,61 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUp
     return new Blob([ab], { type: mimeString });
   };
 
+  // Helper function to convert image URL to base64 for sharing
+  const imageUrlToBase64 = async (url: string): Promise<string> => {
+    try {
+      const response = await fetch(url);
+      const blob = await response.blob();
+      return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onloadend = () => resolve(reader.result as string);
+        reader.onerror = reject;
+        reader.readAsDataURL(blob);
+      });
+    } catch (error) {
+      throw new Error(`Failed to load image: ${url}`);
+    }
+  };
+
   const handleShare = async () => {
     if (!uploadedPhotos || uploadedPhotos.length === 0) {
-      setShareError('请先上传照片');
+      setShareError('没有照片可分享');
       return;
     }
 
     setIsSharing(true);
     setShareError('');
     setShareLink('');
-    setUploadProgress('准备上传...');
+    setUploadProgress('准备分享...');
 
     try {
-      // Step 1: Get presigned upload URLs from server
+      // Convert image URLs to base64 for sharing
+      setUploadProgress('加载照片中...');
+      const base64Photos = await Promise.all(
+        uploadedPhotos.map(url => imageUrlToBase64(url))
+      );
+
+      // Use localStorage fallback for sharing
+      const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname.includes('127.0.0.1');
+      
+      if (isLocalDev) {
+        try {
+          const shareId = Math.random().toString(36).substring(2, 10);
+          const shareData = {
+            images: base64Photos,
+            createdAt: Date.now(),
+          };
+          localStorage.setItem(`share_${shareId}`, JSON.stringify(shareData));
+          const shareLink = `${window.location.origin}/?share=${shareId}`;
+          setShareLink(shareLink);
+          return;
+        } catch (storageError: any) {
+          setShareError('图片数据太大，请减少照片数量或大小');
+          return;
+        }
+      }
+
+      // Try API first (for production)
       setUploadProgress('获取上传地址...');
       const urlsResponse = await fetch('/api/get-upload-urls', {
         method: 'POST',
@@ -90,26 +98,19 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUp
 
       // If API returns 404, use localStorage fallback
       if (urlsResponse.status === 404) {
-        const isLocalDev = window.location.hostname === 'localhost' || window.location.hostname.includes('127.0.0.1');
-        
-        if (isLocalDev) {
-          console.log('API not available, using localStorage fallback');
-          try {
-            const shareId = Math.random().toString(36).substring(2, 10);
-            const shareData = {
-              images: uploadedPhotos,
-              createdAt: Date.now(),
-            };
-            localStorage.setItem(`share_${shareId}`, JSON.stringify(shareData));
-            const shareLink = `${window.location.origin}/?share=${shareId}`;
-            setShareLink(shareLink);
-            return;
-          } catch (storageError: any) {
-            setShareError('图片数据太大，请减少照片数量或大小');
-            return;
-          }
-        } else {
-          throw new Error('API 未配置，请检查部署设置');
+        try {
+          const shareId = Math.random().toString(36).substring(2, 10);
+          const shareData = {
+            images: base64Photos,
+            createdAt: Date.now(),
+          };
+          localStorage.setItem(`share_${shareId}`, JSON.stringify(shareData));
+          const shareLink = `${window.location.origin}/?share=${shareId}`;
+          setShareLink(shareLink);
+          return;
+        } catch (storageError: any) {
+          setShareError('图片数据太大，请减少照片数量或大小');
+          return;
         }
       }
 
@@ -122,10 +123,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUp
       const { shareId, uploadUrls } = urlsData;
 
       // Step 2: Upload images directly to R2 using presigned URLs
-      setUploadProgress(`上传照片中 (0/${uploadedPhotos.length})...`);
+      setUploadProgress(`上传照片中 (0/${base64Photos.length})...`);
       
       let uploadedCount = 0;
-      const uploadPromises = uploadedPhotos.map(async (photo, index) => {
+      const uploadPromises = base64Photos.map(async (photo, index) => {
         const blob = base64ToBlob(photo);
         const { uploadUrl, publicUrl } = uploadUrls[index];
 
@@ -142,7 +143,7 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUp
         }
 
         uploadedCount++;
-        setUploadProgress(`上传照片中 (${uploadedCount}/${uploadedPhotos.length})...`);
+        setUploadProgress(`上传照片中 (${uploadedCount}/${base64Photos.length})...`);
         return publicUrl;
       });
 
@@ -177,9 +178,16 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUp
       if (isLocalDev && (error.message?.includes('Failed to fetch') || error.name === 'TypeError')) {
         try {
           console.log('Network error, using localStorage fallback');
+          // Convert to base64 if not already
+          const base64Photos = await Promise.all(
+            uploadedPhotos.map(url => {
+              if (url.startsWith('data:')) return url;
+              return imageUrlToBase64(url);
+            })
+          );
           const shareId = Math.random().toString(36).substring(2, 10);
           const shareData = {
-            images: uploadedPhotos,
+            images: base64Photos,
             createdAt: Date.now(),
           };
           localStorage.setItem(`share_${shareId}`, JSON.stringify(shareData));
@@ -229,16 +237,6 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUp
       {/* Right Bottom Action Area */}
       <div className="absolute bottom-8 right-8 flex flex-col items-end gap-4 pointer-events-auto">
         
-        {/* Hidden file input */}
-        <input
-          ref={fileInputRef}
-          type="file"
-          accept="image/*"
-          multiple
-          onChange={handleFileChange}
-          className="hidden"
-        />
-
         {/* Shared View: Show "制作我的圣诞树" button */}
         {isSharedView && (
           <button
@@ -251,22 +249,10 @@ export const UIOverlay: React.FC<UIOverlayProps> = ({ mode, onToggle, onPhotosUp
           </button>
         )}
 
-        {/* Not Shared View: Show upload and share controls */}
+        {/* Not Shared View: Show share controls */}
         {!isSharedView && (
           <>
-            {/* Upload Button - Show when no photos */}
-            {!hasPhotos && (
-              <button
-                onClick={handleUploadClick}
-                className="group px-6 py-3 border-2 border-[#D4AF37] bg-black/70 backdrop-blur-md overflow-hidden transition-all duration-500 hover:shadow-[0_0_30px_#D4AF37] hover:border-[#fff] hover:bg-[#D4AF37]/20"
-              >
-                <span className="relative z-10 font-serif text-base md:text-lg text-[#D4AF37] tracking-[0.1em] group-hover:text-white transition-colors whitespace-nowrap">
-                  上传照片
-                </span>
-              </button>
-            )}
-
-            {/* Share Button - Show when photos are uploaded but link not generated */}
+            {/* Share Button - Show when photos are available but link not generated */}
             {hasPhotos && !shareLink && (
               <div className="flex flex-col items-end gap-2">
                 <button
